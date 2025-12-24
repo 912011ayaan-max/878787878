@@ -47,7 +47,9 @@ const TeacherDashboard = forwardRef<HTMLDivElement, TeacherDashboardProps>(({ cu
     const unsubs = [
       dbListen('classes', (data) => {
         if (data) {
-          const list = Object.entries(data).map(([id, c]: [string, any]) => ({ id, ...c })).filter((c: Class) => c.teacherId === user?.id || (Array.isArray(c.secondaryTeacherIds) && c.secondaryTeacherIds.includes(user?.id as string)));
+          const list = Object.entries(data)
+            .map(([id, c]: [string, any]) => ({ id, ...c }))
+            .filter((c: Class) => c.teacherId === user?.id || (Array.isArray(c.secondaryTeacherIds) && c.secondaryTeacherIds.includes(user!.id)));
           setMyClasses(list);
           if (list.length > 0 && !selectedClass) setSelectedClass(list[0].id);
         }

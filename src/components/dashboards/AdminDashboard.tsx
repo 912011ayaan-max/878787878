@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { dbPush, dbRemove, dbListen } from '@/lib/firebase';
+import { dbPush, dbRemove, dbListen, dbUpdate } from '@/lib/firebase';
 import SlidePanel from '@/components/ui/SlidePanel';
 import TimetablePanel from './TimetablePanel';
 import AnalyticsPanel from './AnalyticsPanel';
@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 
 interface Teacher { id: string; name: string; username: string; password: string; subject: string; }
-interface Class { id: string; name: string; grade: string; teacherId: string; teacherName: string; secondaryTeacherIds?: string[]; secondaryTeacherNames?: string[]; }
+interface Class { id: string; name: string; grade: string; teacherId: string; teacherName: string; secondaryTeacherIds?: string[]; }
 interface Student { id: string; name: string; username: string; password: string; classId: string; className: string; }
 interface Announcement { id: string; title: string; content: string; priority: 'normal' | 'important' | 'urgent'; createdAt: string; author: string; }
 
@@ -59,8 +59,7 @@ const AdminDashboard = forwardRef<HTMLDivElement, AdminDashboardProps>(({ curren
       toast({ title: "Error", description: "Please fill all fields", variant: "destructive" }); return;
     }
     const teacher = teachers.find(t => t.id === newClass.teacherId);
-    const secondaryTeacherNames = (newClass.secondaryTeacherIds || []).map(id => teachers.find(t => t.id === id)?.name || '').filter(Boolean);
-    await dbPush('classes', { ...newClass, teacherName: teacher?.name || 'Unassigned', secondaryTeacherNames, createdAt: new Date().toISOString() });
+    await dbPush('classes', { ...newClass, teacherName: teacher?.name || 'Unassigned', createdAt: new Date().toISOString() });
     setNewClass({ name: '', grade: '', teacherId: '', secondaryTeacherIds: [] });
     toast({ title: "Success", description: "Class created successfully" });
   };
@@ -73,6 +72,30 @@ const AdminDashboard = forwardRef<HTMLDivElement, AdminDashboardProps>(({ curren
     await dbPush('students', { ...newStudent, className: cls?.name || 'Unassigned', createdAt: new Date().toISOString() });
     setNewStudent({ name: '', username: '', password: '', classId: '' });
     toast({ title: "Success", description: "Student enrolled successfully" });
+  };
+
+  const [manageClassId, setManageClassId] = useState<string | null>(null);
+  const [managePrimaryTeacherId, setManagePrimaryTeacherId] = useState<string>('');
+  const [manageSecondaryTeacherIds, setManageSecondaryTeacherIds] = useState<string[]>([]);
+  const openManagePanel = (cls: Class) => {
+    setManageClassId(cls.id);
+    setManagePrimaryTeacherId(cls.teacherId);
+    setManageSecondaryTeacherIds(cls.secondaryTeacherIds || []);
+    setShowPanel('manageClass');
+  };
+  const handleSaveManageClass = async () => {
+    if (!manageClassId || !managePrimaryTeacherId) return;
+    const teacher = teachers.find(t => t.id === managePrimaryTeacherId);
+    await dbUpdate(`classes/${manageClassId}`, {
+      teacherId: managePrimaryTeacherId,
+      teacherName: teacher?.name || 'Unassigned',
+      secondaryTeacherIds: manageSecondaryTeacherIds
+    });
+    toast({ title: "Success", description: "Class teachers updated" });
+    setShowPanel(null);
+    setManageClassId(null);
+    setManagePrimaryTeacherId('');
+    setManageSecondaryTeacherIds([]);
   };
 
   const handleAddAnnouncement = async () => {
@@ -240,29 +263,6 @@ const AdminDashboard = forwardRef<HTMLDivElement, AdminDashboardProps>(({ curren
                 {teachers.map(t => <option key={t.id} value={t.id}>{t.name} ({t.subject})</option>)}
               </select>
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-muted-foreground">Secondary Teachers</label>
-              <div className="max-h-48 overflow-auto rounded-lg border border-input p-2 bg-background">
-                {teachers.map(t => {
-                  const checked = (newClass.secondaryTeacherIds || []).includes(t.id);
-                  return (
-                    <label key={t.id} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted cursor-pointer">
-                      <input
-                        type="checkbox"
-                        className="accent-primary"
-                        checked={checked}
-                        onChange={(e) => {
-                          const next = new Set(newClass.secondaryTeacherIds || []);
-                          if (e.target.checked) next.add(t.id); else next.delete(t.id);
-                          setNewClass({ ...newClass, secondaryTeacherIds: Array.from(next) });
-                        }}
-                      />
-                      <span className="text-sm">{t.name} ({t.subject})</span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
             <Button className="w-full bg-gradient-primary" onClick={handleAddClass}><Save className="w-4 h-4 mr-2" />Create Class</Button>
           </div>
         </SlidePanel>
@@ -289,6 +289,34 @@ const AdminDashboard = forwardRef<HTMLDivElement, AdminDashboardProps>(({ curren
               </select>
             </div>
             <Button className="w-full bg-gradient-primary" onClick={handleAddStudent}><Save className="w-4 h-4 mr-2" />Enroll Student</Button>
+          </div>
+        </SlidePanel>
+        <SlidePanel isOpen={showPanel === 'manageClass'} onClose={() => setShowPanel(null)} title="Manage Class Teachers">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">Primary Teacher</label>
+              <select className="w-full h-10 px-3 rounded-lg border border-input bg-background" value={managePrimaryTeacherId} onChange={(e) => setManagePrimaryTeacherId((e.target as HTMLSelectElement).value)}>
+                {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">Secondary Teachers</label>
+              <select
+                multiple
+                className="w-full h-24 px-3 rounded-lg border border-input bg-background"
+                value={manageSecondaryTeacherIds}
+                onChange={(e) => {
+                  const options = Array.from((e.target as HTMLSelectElement).selectedOptions).map(o => (o as HTMLOptionElement).value);
+                  setManageSecondaryTeacherIds(options);
+                }}
+              >
+                {teachers
+                  .filter(t => t.id !== managePrimaryTeacherId)
+                  .map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+              <p className="text-xs text-muted-foreground">Hold Ctrl/Cmd to select multiple</p>
+            </div>
+            <Button className="w-full bg-gradient-primary" onClick={handleSaveManageClass}><Save className="w-4 h-4 mr-2" />Save Changes</Button>
           </div>
         </SlidePanel>
       </div>
@@ -409,9 +437,21 @@ const AdminDashboard = forwardRef<HTMLDivElement, AdminDashboardProps>(({ curren
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-2xl bg-gradient-gold flex items-center justify-center"><span className="font-display font-bold text-secondary-foreground">{c.grade}</span></div>
-                    <div><h4 className="font-semibold">{c.name}</h4><p className="text-sm text-muted-foreground">{c.teacherName}</p><p className="text-xs text-muted-foreground">{students.filter(s => s.classId === c.id).length} students</p></div>
+                    <div>
+                      <h4 className="font-semibold">{c.name}</h4>
+                      <p className="text-sm text-muted-foreground">{c.teacherName}</p>
+                      {Array.isArray(c.secondaryTeacherIds) && c.secondaryTeacherIds.length > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          Secondary: {teachers.filter(t => (c.secondaryTeacherIds || []).includes(t.id)).map(t => t.name).join(', ')}
+                        </p>
+                      )}
+                      <p className="text-xs text-muted-foreground">{students.filter(s => s.classId === c.id).length} students</p>
+                    </div>
                   </div>
-                  <Button variant="ghost" size="icon" onClick={() => dbRemove(`classes/${c.id}`)}><Trash2 className="w-4 h-4 text-destructive" /></Button>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => openManagePanel(c)}>Manage</Button>
+                    <Button variant="ghost" size="icon" onClick={() => dbRemove(`classes/${c.id}`)}><Trash2 className="w-4 h-4 text-destructive" /></Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -433,6 +473,23 @@ const AdminDashboard = forwardRef<HTMLDivElement, AdminDashboardProps>(({ curren
                 <option value="">Select a teacher</option>
                 {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">Assign Secondary Teachers</label>
+              <select
+                multiple
+                className="w-full h-24 px-3 rounded-lg border border-input bg-background"
+                value={newClass.secondaryTeacherIds}
+                onChange={(e) => {
+                  const options = Array.from(e.target.selectedOptions).map(o => o.value);
+                  setNewClass({ ...newClass, secondaryTeacherIds: options });
+                }}
+              >
+                {teachers.filter(t => t.id !== newClass.teacherId).map(t => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">Hold Ctrl/Cmd to select multiple</p>
             </div>
             <Button className="w-full bg-gradient-primary" onClick={handleAddClass}><Save className="w-4 h-4 mr-2" />Create Class</Button>
           </div>

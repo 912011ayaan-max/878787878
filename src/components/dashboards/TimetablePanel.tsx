@@ -30,7 +30,6 @@ interface Class {
   grade: string;
   teacherId: string;
   teacherName: string;
-  secondaryTeacherIds?: string[];
 }
 
 interface TimetablePanelProps {
@@ -90,7 +89,7 @@ const TimetablePanel: React.FC<TimetablePanelProps> = ({ currentPage }) => {
           const classList = Object.entries(data).map(([id, c]: [string, any]) => ({ id, ...c }));
           
           if (user?.role === 'teacher') {
-            const myClasses = classList.filter(c => c.teacherId === user.id || (Array.isArray(c.secondaryTeacherIds) && c.secondaryTeacherIds.includes(user.id)));
+            const myClasses = classList.filter(c => c.teacherId === user.id);
             setClasses(myClasses);
             if (myClasses.length > 0 && !selectedClass) {
               setSelectedClass(myClasses[0].id);
